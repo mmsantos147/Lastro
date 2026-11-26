@@ -1,0 +1,78 @@
+spring:
+  application:
+    name: lastro
+  config:
+    # Local development: reads ../.env (see .env.example) when running from backend/. Absent in production,
+    # where the variables come from the environment.
+    import: optional:file:../.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/lastro}
+    username: ${DB_USERNAME:lastro}
+    password: ${DB_PASSWORD:lastro}
+  servlet:
+    multipart:
+      # B3 and Binance exports of many years of history
+      max-file-size: 10MB
+      max-request-size: 10MB
+  jpa:
+    # Flyway owns the schema; Hibernate only checks that entities match it.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+server:
+  # Behind Coolify's reverse proxy: trust X-Forwarded-* from private networks (HTTPS, client IP)
+  forward-headers-strategy: native
+  servlet:
+    session:
+      timeout: 12h
+      cookie:
+        http-only: true
+        same-site: lax
+        # true in production (HTTPS); false locally so the cookie works over http://localhost
+        secure: ${SESSION_COOKIE_SECURE:false}
+
+lastro:
+  # Public address of the website, used in the links returned to Claude (e.g. https://lastro.example.com)
+  public-url: ${LASTRO_PUBLIC_URL:http://localhost:5173}
+  mcp:
+    # Fixed token Claude sends as "Authorization: Bearer <token>"; MCP is closed while it is empty
+    token: ${LASTRO_MCP_TOKEN:}
+    # User whose portfolio the MCP tools read and write; the only one who can authorize claude.ai (OAuth)
+    username: ${LASTRO_MCP_USERNAME:}
+    # OAuth callback URLs of claude.ai: authorization codes are only ever sent there
+    oauth-redirect-uris: ${LASTRO_MCP_OAUTH_REDIRECT_URIS:https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback}
+  market:
+    brapi-base-url: ${BRAPI_BASE_URL:https://brapi.dev}
+    # Optional. Without it brapi serves only a few demo tickers and no Ibovespa.
+    brapi-token: ${BRAPI_TOKEN:}
+    # Longest history range the brapi plan accepts (free plan: 3 months)
+    brapi-max-range: ${BRAPI_MAX_RANGE:3mo}
+    binance-base-url: https://data-api.binance.vision
+    sgs-base-url: https://api.bcb.gov.br
+    # Quotes and indicators refresh (B3 time zone): after the close and in the morning, when SGS publishes CDI
+    refresh-cron: "0 0 9,21 * * *"
+  bootstrap-admin:
+    username: ${LASTRO_ADMIN_USERNAME:}
+    password: ${LASTRO_ADMIN_PASSWORD:}
+    name: ${LASTRO_ADMIN_NAME:}
+
+spring.ai.mcp.server:
+  name: lastro
+  version: 1.0.0
+  # Stateless Streamable HTTP: plain request/response tool calls, no server-side sessions
+  protocol: STATELESS
+  type: SYNC
+  instructions: >
+    Personal investment portfolio of the user (values in BRL). Numbers come only from these tools; never
+    estimate them. Use the monthly_analysis prompt for the monthly contribution analysis.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

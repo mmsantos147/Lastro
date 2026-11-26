@@ -1,0 +1,65 @@
+# Production stack for the VPS (Coolify "Docker Compose" resource, Base Directory "/"). Secrets come from the
+# environment configured in Coolify, never from this file. HTTPS is terminated by Coolify's reverse proxy (Traefik),
+# which routes the domain to app:8080; nothing here publishes ports, since Traefik already owns 80/443.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-lastro}
+      DB_USERNAME: ${DB_USERNAME:-lastro}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      SESSION_COOKIE_SECURE: "true"
+      LASTRO_PUBLIC_URL: ${LASTRO_PUBLIC_URL:?set LASTRO_PUBLIC_URL}
+      LASTRO_ADMIN_USERNAME: ${LASTRO_ADMIN_USERNAME:-}
+      LASTRO_ADMIN_PASSWORD: ${LASTRO_ADMIN_PASSWORD:-}
+      LASTRO_ADMIN_NAME: ${LASTRO_ADMIN_NAME:-}
+      LASTRO_MCP_TOKEN: ${LASTRO_MCP_TOKEN:-}
+      LASTRO_MCP_USERNAME: ${LASTRO_MCP_USERNAME:-}
+      BRAPI_TOKEN: ${BRAPI_TOKEN:-}
+      BRAPI_MAX_RANGE: ${BRAPI_MAX_RANGE:-3mo}
+    expose:
+      - "8080"
+    networks:
+      - internal
+      - web
+    healthcheck:
+      # The JRE image has no curl/wget; bash's /dev/tcp is enough to probe the health endpoint
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q UP <&3'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    # The VPS has 7.8 GiB and no swap, shared with Coolify and other apps; the heap is 75% of this limit
+    mem_limit: 1536m
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-lastro}
+      POSTGRES_USER: ${DB_USERNAME:-lastro}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+    volumes:
+      # PostgreSQL 18+ images keep data under /var/lib/postgresql/<major>/
+      - postgres-data:/var/lib/postgresql
+    # Only the app reaches the database; the internal network has no route to the outside world
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+
+networks:
+  internal:
+    internal: true
+  web: {}
+
+volumes:
+  postgres-data:

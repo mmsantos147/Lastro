@@ -1,0 +1,2 @@
+-- Baseline migration: establishes Flyway's schema history.
+-- Domain tables are introduced in later migrations, alongside their entities.
